@@ -176,7 +176,7 @@ def update_quiz_and_questions(quiz: canvas.Quiz) -> None:
     print("Done fetching quiz questions from Canvas.")
 
     # TODO: confirm html vs non-html variants are correct
-    # TODO: account for answers!
+    # TODO: account for answers! (THIS IS THE PROBLEM FOR THIS BRANCH!)
     update_quiz_question = make_update_text(std_text_process,
                                             ["question_text",
                                              "correct_comments",
