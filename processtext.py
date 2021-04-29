@@ -164,8 +164,6 @@ update_page_fn = make_update_text(std_text_process, "body", "url")
 
 update_quiz_text = make_update_text(std_text_process, "description", "title")
 
-DEBUG_ALL_ANSWER_KEYS = {}
-
 
 def update_quiz_and_questions(quiz: canvas.Quiz) -> None:
     """Perform regex search-and-replace on the quiz and its questions.
@@ -193,7 +191,8 @@ def update_quiz_and_questions(quiz: canvas.Quiz) -> None:
                                                     "incorrect_comments_html",
                                                     "neutral_comments_html"],
                                                    "question_name")
-    STD_ANSWER_TEXT_FIELDS = ["answer_text",
+    STD_ANSWER_TEXT_FIELDS = ["answer_text",  # actual key when fetched is "text", not "answer_text"
+                              "text",
                               "answer_comments",
                               "comments",
                               "comments_html",
@@ -209,10 +208,6 @@ def update_quiz_and_questions(quiz: canvas.Quiz) -> None:
         # Update answers:
         updated = False
         for answer in obj["answers"]:
-            for key in answer.keys():
-                if key not in DEBUG_ALL_ANSWER_KEYS:
-                    print(f"Sample of key {key} is: {answer[key]}")
-                DEBUG_ALL_ANSWER_KEYS[key] = True
             for text_field in STD_ANSWER_TEXT_FIELDS:
                 old_value = None
                 try:
@@ -232,16 +227,20 @@ def update_quiz_and_questions(quiz: canvas.Quiz) -> None:
             except KeyError:
                 pass
             if old_value is not None:
-                old_values = old_value.split("\n")
-                for i in range(len(old_values)):
-                    new_value = std_text_process(old_values[i])
+                values = old_value.split("\n")
+                updated_matches = False
+                for i in range(len(values)):
+                    new_value = std_text_process(values[i])
                     if new_value is not None:
                         if "\n" in new_value:
                             print(
-                                f"ERROR: substitution would introduce an endline into a matching answer ('{old_values[i]}' becomes '{new_value}'). Skipping instead.")
+                                f"ERROR: substitution would introduce an endline into a matching answer ('{values[i]}' becomes '{new_value}'). Skipping instead.")
                         else:
-                            old_values[i] = new_value
+                            values[i] = new_value
                             updated = True
+                        updated_matches = True
+                if updated_matches:
+                    answer[text_field] = "\n".join(values)
         if updated:
             obj.update()
 
@@ -290,15 +289,4 @@ if process_quizzes:
     print("Done fetching quizzes from Canvas.")
     update_objects(quizzes, "quiz", update_quiz_fn)
 
-print("All answer fields:")
-for field in DEBUG_ALL_ANSWER_KEYS.keys():
-    print(field)
 # Note: for some reason, Course.assignments filters out "online_quiz" assignment types. Should it?? Are those "Quiz" instead?
-
-
-# TODO: failing on the answers themselves (but not the comments) on Pre-Class quiz 1.
-# NOT CATCHING QUESTION 1 "possible answer".
-#
-# NOT CATCHING QUESTION 2 "correct answer" or "possible answer"
-#
-# IS catching both html and non-html comments.
