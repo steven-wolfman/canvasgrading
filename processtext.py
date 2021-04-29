@@ -97,7 +97,11 @@ def make_update_text(text_process_fn: Callable[[Optional[str]], Optional[str]],
         update_needed = False
         for text_field in text_fields:
             print("Processing text field: %s" % text_field)
-            old_value = obj[text_field]
+            old_value = None
+            try:
+                old_value = obj[text_field]
+            except KeyError:
+                pass
             new_value = text_process_fn(old_value)
             if new_value is None:
                 print("No changes made.")
@@ -160,11 +164,15 @@ update_page_fn = make_update_text(std_text_process, "body", "url")
 
 update_quiz_text = make_update_text(std_text_process, "description", "title")
 
+DEBUG_ALL_ANSWER_KEYS = {}
+
 
 def update_quiz_and_questions(quiz: canvas.Quiz) -> None:
     """Perform regex search-and-replace on the quiz and its questions.
 
     Uses the script's global regex and replacement string.
+
+    Handles question text, comments, and question answers.
     """
     print("Processing the quiz itself.")
     update_quiz_text(quiz)
@@ -176,16 +184,67 @@ def update_quiz_and_questions(quiz: canvas.Quiz) -> None:
     print("Done fetching quiz questions from Canvas.")
 
     # TODO: confirm html vs non-html variants are correct
-    # TODO: account for answers! (THIS IS THE PROBLEM FOR THIS BRANCH!)
-    update_quiz_question = make_update_text(std_text_process,
-                                            ["question_text",
-                                             "correct_comments",
-                                             "incorrect_comments",
-                                             "neutral_comments",
-                                             "correct_comments_html",
-                                             "incorrect_comments_html",
-                                             "neutral_comments_html"],
-                                            "question_name")
+    update_quiz_question_itself = make_update_text(std_text_process,
+                                                   ["question_text",
+                                                    "correct_comments",
+                                                    "incorrect_comments",
+                                                    "neutral_comments",
+                                                    "correct_comments_html",
+                                                    "incorrect_comments_html",
+                                                    "neutral_comments_html"],
+                                                   "question_name")
+    STD_ANSWER_TEXT_FIELDS = ["answer_text",
+                              "answer_comments",
+                              "comments",
+                              "comments_html",
+                              "html",
+                              "text_after_answers",
+                              "answer_match_left",
+                              "answer_match_right"]
+
+    def update_quiz_question(obj: canvas.QuizQuestion) -> None:
+        """update the quiz question itself AND its answers"""
+        update_quiz_question_itself(obj)
+
+        # Update answers:
+        updated = False
+        for answer in obj["answers"]:
+            for key in answer.keys():
+                if key not in DEBUG_ALL_ANSWER_KEYS:
+                    print(f"Sample of key {key} is: {answer[key]}")
+                DEBUG_ALL_ANSWER_KEYS[key] = True
+            for text_field in STD_ANSWER_TEXT_FIELDS:
+                old_value = None
+                try:
+                    old_value = answer[text_field]
+                except KeyError:
+                    pass
+                new_value = std_text_process(old_value)
+                if new_value is not None:
+                    answer[text_field] = new_value
+                    updated = True
+
+            # For the "matching_answer_incorrect_matches" field,
+            # endlines are significant (i.e., it's really a list divided by endlines).
+            old_value = None
+            try:
+                old_value = answer[text_field]
+            except KeyError:
+                pass
+            if old_value is not None:
+                old_values = old_value.split("\n")
+                for i in range(len(old_values)):
+                    new_value = std_text_process(old_values[i])
+                    if new_value is not None:
+                        if "\n" in new_value:
+                            print(
+                                f"ERROR: substitution would introduce an endline into a matching answer ('{old_values[i]}' becomes '{new_value}'). Skipping instead.")
+                        else:
+                            old_values[i] = new_value
+                            updated = True
+        if updated:
+            obj.update()
+
     update_objects(quiz_questions, "quiz (%s) questions" %
                    quiz["title"], update_quiz_question)
 
@@ -231,5 +290,15 @@ if process_quizzes:
     print("Done fetching quizzes from Canvas.")
     update_objects(quizzes, "quiz", update_quiz_fn)
 
-
+print("All answer fields:")
+for field in DEBUG_ALL_ANSWER_KEYS.keys():
+    print(field)
 # Note: for some reason, Course.assignments filters out "online_quiz" assignment types. Should it?? Are those "Quiz" instead?
+
+
+# TODO: failing on the answers themselves (but not the comments) on Pre-Class quiz 1.
+# NOT CATCHING QUESTION 1 "possible answer".
+#
+# NOT CATCHING QUESTION 2 "correct answer" or "possible answer"
+#
+# IS catching both html and non-html comments.
